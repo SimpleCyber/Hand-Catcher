@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Catcher Game</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Socket.IO -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+    <style>
+        .game-container {
+            position: relative;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 640/480;
+            overflow: hidden;
+        }
+        .feed-container {
+            border: 3px solid rgba(0, 255, 0, 0.7);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .feed-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        @media (max-width: 768px) {
+            .feeds-wrapper {
+                flex-direction: column;
+            }
+            .feed-container {
+                width: 100% !important;
+                margin-bottom: 1rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <header class="bg-gray-800 p-4 shadow-lg">
+        <div class="container mx-auto flex flex-col md:flex-row justify-between items-center">
+            <div class="flex items-center gap-3 mb-4 md:mb-0">
+                <i class="fas fa-gamepad text-3xl text-green-500"></i>
+                <h1 class="text-2xl font-bold">Hand Catcher</h1>
+            </div>
+            <div class="flex gap-4">
+                <a href="https://github.com/yourusername" target="_blank" class="hover:text-green-400 transition">
+                    <i class="fab fa-github text-2xl"></i>
+                </a>
+                <a href="https://linkedin.com/in/yourusername" target="_blank" class="hover:text-green-400 transition">
+                    <i class="fab fa-linkedin text-2xl"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto py-8 px-4">
+        <div class="max-w-6xl mx-auto">
+            <!-- Game Info -->
+            <div class="mb-6 text-center">
+                <h2 class="text-3xl font-bold mb-2 text-green-400">Motion-Controlled Catching Game</h2>
+                <p class="text-gray-300 mb-6">Use your hand to catch falling objects. Allow camera access to play!</p>
+                
+                <!-- Game Stats -->
+                <div class="grid grid-cols-3 gap-4 mb-6 text-center">
+                    <div class="bg-gray-800 rounded-lg p-4 shadow-lg">
+                        <i class="fas fa-trophy text-yellow-400 text-2xl mb-2"></i>
+                        <h3 class="text-lg font-semibold">Score</h3>
+                        <p id="scoreDisplay" class="text-2xl font-bold text-white">0</p>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-4 shadow-lg">
+                        <i class="fas fa-heart text-red-500 text-2xl mb-2"></i>
+                        <h3 class="text-lg font-semibold">Lives</h3>
+                        <p id="livesDisplay" class="text-2xl font-bold text-white">3</p>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-4 shadow-lg">
+                        <i class="fas fa-clock text-blue-400 text-2xl mb-2"></i>
+                        <h3 class="text-lg font-semibold">High Score</h3>
+                        <p id="highScoreDisplay" class="text-2xl font-bold text-white">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Controls -->
+            <div class="flex justify-center gap-4 mb-6">
+                <button id="startBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                    <i class="fas fa-play"></i>
+                    <span>Start Game</span>
+                </button>
+                <button id="fullscreenBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                    <i class="fas fa-expand"></i>
+                    <span>Fullscreen</span>
+                </button>
+                <button id="muteBtn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                    <i class="fas fa-volume-up"></i>
+                    <span>Mute</span>
+                </button>
+            </div>
+
+            <!-- Game & Webcam Feeds -->
+            <div class="feeds-wrapper flex justify-between gap-6 mb-8">
+                <!-- Webcam Feed with Hand Tracking -->
+                <div class="feed-container w-1/2">
+                    <div class="bg-gray-800 p-2 text-center mb-2 rounded-t-lg">
+                        <h3 class="font-semibold flex items-center justify-center gap-2">
+                            <i class="fas fa-camera text-blue-400"></i>
+                            Hand Tracking Feed
+                        </h3>
+                    </div>
+                    <img id="webcamFeed" src="/video_feed" alt="Webcam Feed with Hand Tracking">
+                </div>
+                
+                <!-- Game Feed -->
+                <div class="feed-container w-1/2">
+                    <div class="bg-gray-800 p-2 text-center mb-2 rounded-t-lg">
+                        <h3 class="font-semibold flex items-center justify-center gap-2">
+                            <i class="fas fa-gamepad text-green-400"></i>
+                            Game Feed
+                        </h3>
+                    </div>
+                    <img id="gameFeed" src="/game_feed" alt="Game Feed">
+                </div>
+            </div>
+
+            <!-- Game Instructions -->
+            <div class="bg-gray-800 rounded-lg p-6 shadow-lg mb-8">
+                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+                    <i class="fas fa-info-circle text-blue-400"></i>
+                    How to Play
+                </h3>
+                <ol class="list-decimal list-inside space-y-2 text-gray-300">
+                    <li>Allow camera access when prompted</li>
+                    <li>Click the "Start Game" button to begin</li>
+                    <li>Use your index finger to control the catcher at the bottom of the screen</li>
+                    <li>Catch falling circles to earn points</li>
+                    <li>Missing a circle costs you a life</li>
+                    <li>Game ends when you run out of lives</li>
+                </ol>
+            </div>
+            
+            <!-- Technical Details -->
+            <div class="bg-gray-800 rounded-lg p-6 shadow-lg mb-8">
+                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+                    <i class="fas fa-code text-purple-400"></i>
+                    Technical Details
+                </h3>
+                <ul class="list-disc list-inside space-y-2 text-gray-300">
+                    <li>Built with Python, OpenCV, and MediaPipe for hand tracking</li>
+                    <li>Game logic powered by PyGame</li>
+                    <li>Web interface using Flask and Socket.IO</li>
+                    <li>Responsive design with Tailwind CSS</li>
+                    <li>Both webcam feed with hand tracking landmarks and game screen are streamed in real-time</li>
+                </ul>
+            </div>
+        </div>
+    </main>
+
+    <!-- Game Over Modal -->
+    <div id="gameOverModal" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center hidden">
+        <div class="bg-gray-800 rounded-lg p-8 max-w-md w-full text-center">
+            <i class="fas fa-trophy text-yellow-400 text-5xl mb-4"></i>
+            <h2 class="text-3xl font-bold mb-2">Game Over!</h2>
+            <p class="text-xl mb-4">Your Score: <span id="finalScore">0</span></p>
+            <p class="mb-6">High Score: <span id="modalHighScore">0</span></p>
+            <button id="playAgainBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+    <footer class="bg-gray-800 p-4 mt-auto">
+        <div class="container mx-auto text-center text-gray-400">
+            <p>Hand Catcher Game &copy; 2025. Created with ❤️</p>
+            <div class="flex justify-center mt-2 gap-4">
+                <a href="https://github.com/yourusername" target="_blank" class="hover:text-green-400 transition">
+                    <i class="fab fa-github"></i> GitHub
+                </a>
+                <a href="https://linkedin.com/in/yourusername" target="_blank" class="hover:text-green-400 transition">
+                    <i class="fab fa-linkedin"></i> LinkedIn
+                </a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Connect to Socket.IO
+        const socket = io();
+        
+        // DOM Elements
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const livesDisplay = document.getElementById('livesDisplay');
+        const highScoreDisplay = document.getElementById('highScoreDisplay');
+        const startBtn = document.getElementById('startBtn');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const muteBtn = document.getElementById('muteBtn');
+        const gameOverModal = document.getElementById('gameOverModal');
+        const finalScore = document.getElementById('finalScore');
+        const modalHighScore = document.getElementById('modalHighScore');
+        const playAgainBtn = document.getElementById('playAgainBtn');
+        
+        // Game variables
+        let gameActive = false;
+        let isMuted = false;
+        
+        // Update game state from server
+        socket.on('game_state_update', function(data) {
+            scoreDisplay.textContent = data.score;
+            livesDisplay.textContent = data.lives;
+            highScoreDisplay.textContent = data.high_score;
+            
+            // Check if game state changed
+            if (gameActive && !data.game_active && data.lives <= 0) {
+                showGameOverModal(data.score, data.high_score);
+            }
+            
+            gameActive = data.game_active;
+            
+            // Update button text based on game state
+            if (gameActive) {
+                startBtn.innerHTML = '<i class="fas fa-pause"></i> Pause Game';
+                startBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                startBtn.classList.add('bg-yellow-600', 'hover:bg-yellow-700');
+            } else {
+                startBtn.innerHTML = '<i class="fas fa-play"></i> ' + 
+                    (data.lives > 0 ? 'Start Game' : 'New Game');
+                startBtn.classList.remove('bg-yellow-600', 'hover:bg-yellow-700');
+                startBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+            }
+        });
+        
+        // Handle response from game commands
+        socket.on('game_command_response', function(data) {
+            console.log('Command response:', data);
+        });
+        
+        // Start/Pause button click handler
+        startBtn.addEventListener('click', function() {
+            if (gameActive) {
+                socket.emit('pause_game');
+            } else {
+                if (livesDisplay.textContent === '0') {
+                    socket.emit('start_game');
+                } else {
+                    socket.emit('resume_game');
+                }
+            }
+        });
+        
+        // Fullscreen button click handler
+        fullscreenBtn.addEventListener('click', function() {
+            const feedsWrapper = document.querySelector('.feeds-wrapper');
+            
+            if (!document.fullscreenElement) {
+                feedsWrapper.requestFullscreen().catch(err => {
+                    console.log(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        });
+        
+        // Mute button click handler
+        muteBtn.addEventListener('click', function() {
+            isMuted = !isMuted;
+            
+            if (isMuted) {
+                muteBtn.innerHTML = '<i class="fas fa-volume-mute"></i> Unmute';
+                // Send mute command to server (to be implemented)
+            } else {
+                muteBtn.innerHTML = '<i class="fas fa-volume-up"></i> Mute';
+                // Send unmute command to server (to be implemented)
+            }
+        });
+        
+        // Play again button click handler
+        playAgainBtn.addEventListener('click', function() {
+            hideGameOverModal();
+            socket.emit('start_game');
+        });
+        
+        // Show game over modal
+        function showGameOverModal(score, highScore) {
+            finalScore.textContent = score;
+            modalHighScore.textContent = highScore;
+            gameOverModal.classList.remove('hidden');
+        }
+        
+        // Hide game over modal
+        function hideGameOverModal() {
+            gameOverModal.classList.add('hidden');
+        }
+        
+        // Refresh game feeds if they fail to load
+        document.getElementById('webcamFeed').onerror = function() {
+            setTimeout(() => {
+                this.src = '/video_feed?' + new Date().getTime();
+            }, 1000);
+        };
+        
+        document.getElementById('gameFeed').onerror = function() {
+            setTimeout(() => {
+                this.src = '/game_feed?' + new Date().getTime();
+            }, 1000);
+        };
+    </script>
+</body>
+</html>
