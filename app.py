@@ -241,27 +241,30 @@ def generate_webcam_frames():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
     
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        # Flip frame horizontally for a mirror effect
-        frame = cv2.flip(frame, 1)
-        
-        # Process hand tracking
-        process_hand_tracking(frame)
-        
-        # Encode the frame for streaming
-        with lock:
-            if webcam_frame is not None:
-                ret, buffer = cv2.imencode('.jpg', webcam_frame)
-                if ret:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-        
-        # Limit frame rate
-        time.sleep(1/FPS)
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Flip frame horizontally for a mirror effect
+            frame = cv2.flip(frame, 1)
+            
+            # Process hand tracking
+            process_hand_tracking(frame)
+            
+            # Encode the frame for streaming
+            with lock:
+                if webcam_frame is not None:
+                    ret, buffer = cv2.imencode('.jpg', webcam_frame)
+                    if ret:
+                        yield (b'--frame\r\n'
+                            b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            
+            # Limit frame rate
+            time.sleep(1/FPS)
+    except GeneratorExit:
+        cap.release()
 
 def generate_game_frames():
     """Generator function for game frames"""
@@ -269,11 +272,12 @@ def generate_game_frames():
         # Update game logic
         update_game_state()
         
-        # Render game frame
-        render_game_frame()
+        
         
         # Encode the frame for streaming
         with lock:
+            # Render game frame
+            render_game_frame()
             if game_frame is not None:
                 ret, buffer = cv2.imencode('.jpg', game_frame)
                 if ret:
