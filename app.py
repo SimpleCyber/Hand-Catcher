@@ -12,11 +12,11 @@ from flask_socketio import SocketIO, emit
 app = Flask(__name__, static_folder='static', template_folder='templates')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Game Constants (same as your original game)
+# Game Constants
 WIDTH, HEIGHT = 640, 480
 CATCHER_WIDTH, CATCHER_HEIGHT = 100, 20
 CIRCLE_RADIUS = 20
-FPS = 60
+FPS = 30  # Reduced from 60 to lower CPU usage
 FALL_SPEED = 5
 MAX_LIVES = 3
 BALL_GENERATION_INTERVAL = 30
@@ -38,33 +38,37 @@ mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 hands = mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-# Initialize pygame for game logic (headless mode)
+# Mock webcam frame (for cloud deployment)
+mock_frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+cv2.putText(mock_frame, "No Camera Available", (80, HEIGHT//2), 
+            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+cv2.putText(mock_frame, "Use Mouse/Touch Instead", (70, HEIGHT//2 + 40), 
+            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+# Initialize pygame (headless mode)
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
+os.environ['SDL_AUDIODRIVER'] = 'dummy'  # Use dummy audio driver to avoid ALSA errors
 pygame.init()
 pygame.display.set_mode((1, 1))
+
+# Disable pygame mixer to avoid audio errors
+pygame.mixer.quit()
 
 # Create a surface for the game
 game_surface = pygame.Surface((WIDTH, HEIGHT))
 
-# Load sound effects (paths might need adjustment)
-try:
-    pygame.mixer.init()
-    catch_sound = pygame.mixer.Sound('./static/assets/catch.mp3')
-    miss_sound = pygame.mixer.Sound('./static/assets/miss.mp3')
-    game_over_sound = pygame.mixer.Sound('./static/assets/game_over.mp3')
-    background_music = pygame.mixer.Sound('./static/assets/background_music.mp3')
-except Exception as e:
-    print(f"Error loading sounds: {e}")
-    # Create dummy sound objects
-    class DummySound:
-        def play(self): pass
-    catch_sound = DummySound()
-    miss_sound = DummySound()
-    game_over_sound = DummySound()
-    background_music = DummySound()
+# Create dummy sound objects
+class DummySound:
+    def play(self, loops=0): pass
+    def stop(self): pass
+
+catch_sound = DummySound()
+miss_sound = DummySound()
+game_over_sound = DummySound()
+background_music = DummySound()
 
 # Game state for streaming
-webcam_frame = None
+webcam_frame = mock_frame.copy()
 game_frame = None
 hand_landmarks = None
 game_state = {
@@ -73,6 +77,9 @@ game_state = {
     "game_active": False,
     "high_score": 0
 }
+
+# Mouse position for control in cloud environment
+mouse_position = WIDTH // 2
 
 # Thread lock
 lock = threading.Lock()
@@ -87,7 +94,7 @@ def draw_catcher(surface, x_position):
     pygame.draw.rect(surface, RED, (int(x_position - CATCHER_WIDTH / 2), HEIGHT - CATCHER_HEIGHT, CATCHER_WIDTH, CATCHER_HEIGHT))
 
 def update_game_state():
-    """Update the game state, similar to your original game logic"""
+    """Update the game state"""
     global circles, score, lives, game_active, frame_counter, high_score, game_state
     
     if not game_active:
@@ -99,8 +106,8 @@ def update_game_state():
         circles.append((random.randint(CIRCLE_RADIUS, WIDTH - CIRCLE_RADIUS), 0))
         frame_counter = 0
     
-    # Get current catcher position from hand landmarks
-    catcher_x = WIDTH // 2  # Default position
+    # Get current catcher position from hand landmarks or mouse position
+    catcher_x = mouse_position  # Default to mouse position
     if hand_landmarks:
         index_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
         catcher_x = int(index_finger_tip.x * WIDTH)
@@ -151,8 +158,8 @@ def render_game_frame():
     # Draw game elements
     draw_circles(game_surface)
     
-    # Get current catcher position from hand landmarks
-    catcher_x = WIDTH // 2  # Default position
+    # Get current catcher position from hand landmarks or mouse position
+    catcher_x = mouse_position  # Default to mouse position
     if hand_landmarks:
         index_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
         catcher_x = int(index_finger_tip.x * WIDTH)
@@ -235,67 +242,92 @@ def resume_game():
     global game_active
     game_active = True
 
-def get_available_camera(max_index=10):
-    for index in range(max_index):
-        cap = cv2.VideoCapture(index)
-        if cap.isOpened():
-            print(f"Using camera index: {index}")
-            return cap
-        cap.release()
-    print("No camera found.")
-    return None
-
 def generate_webcam_frames():
-    """Generator function for webcam feed with hand tracking"""
-    cap = get_available_camera()
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+    """Generator function for webcam feed"""
+    # Try to access camera first
+    camera_available = False
+    cap = None
+    
+    try:
+        cap = cv2.VideoCapture(0)
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+            camera_available = True
+            print("Camera available, using real webcam feed.")
+        else:
+            print("No camera available, using mock webcam feed.")
+    except Exception as e:
+        print(f"Error accessing camera: {e}")
+        print("Using mock webcam feed instead.")
     
     try:
         while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Flip frame horizontally for a mirror effect
-            frame = cv2.flip(frame, 1)
-            
-            # Process hand tracking
-            process_hand_tracking(frame)
+            if camera_available:
+                ret, frame = cap.read()
+                if not ret:
+                    # Switch to mock frame if camera fails
+                    frame = mock_frame.copy()
+                else:
+                    # Flip frame horizontally for a mirror effect
+                    frame = cv2.flip(frame, 1)
+                    # Process hand tracking
+                    process_hand_tracking(frame)
+            else:
+                # Use mock frame
+                frame = mock_frame.copy()
             
             # Encode the frame for streaming
             with lock:
-                if webcam_frame is not None:
-                    ret, buffer = cv2.imencode('.jpg', webcam_frame)
-                    if ret:
-                        yield (b'--frame\r\n'
-                            b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                if camera_available:
+                    current_frame = webcam_frame
+                else:
+                    current_frame = frame
+                
+                ret, buffer = cv2.imencode('.jpg', current_frame)
+                if ret:
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
             
             # Limit frame rate
             time.sleep(1/FPS)
     except GeneratorExit:
-        cap.release()
+        if cap and cap.isOpened():
+            cap.release()
 
 def generate_game_frames():
     """Generator function for game frames"""
     while True:
-        # Update game logic
-        update_game_state()
-        
-        
-        
-        # Encode the frame for streaming
-        with lock:
+        try:
+            # Update game logic
+            update_game_state()
+            
             # Render game frame
             render_game_frame()
-            if game_frame is not None:
-                ret, buffer = cv2.imencode('.jpg', game_frame)
-                if ret:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-        
-        # Limit frame rate
-        time.sleep(1/FPS)
+            
+            # Encode the frame for streaming
+            with lock:
+                if game_frame is not None:
+                    ret, buffer = cv2.imencode('.jpg', game_frame)
+                    if ret:
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            
+            # Limit frame rate
+            time.sleep(1/FPS)
+        except Exception as e:
+            print(f"Error in game frame generation: {e}")
+            # Create an error frame
+            error_frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+            cv2.putText(error_frame, "Game Engine Error", (150, HEIGHT//2), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+            
+            ret, buffer = cv2.imencode('.jpg', error_frame)
+            if ret:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            
+            time.sleep(1)
 
 @app.route('/')
 def index():
@@ -347,12 +379,16 @@ def handle_resume_game():
     resume_game()
     emit('game_command_response', {'status': 'success', 'command': 'resume'})
 
+@socketio.on('mouse_move')
+def handle_mouse_move(data):
+    """Handle mouse move event"""
+    global mouse_position
+    try:
+        mouse_position = data['x']
+    except Exception as e:
+        print(f"Error processing mouse move: {e}")
+
 if __name__ == '__main__':
-    # Start the game in a separate thread
-    game_thread = threading.Thread(target=update_game_state)
-    game_thread.daemon = True
-    game_thread.start()
-    
     # Start the Flask app
     port = int(os.environ.get('PORT', 8000))
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)

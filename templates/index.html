@@ -22,11 +22,21 @@
             border: 3px solid rgba(0, 255, 0, 0.7);
             border-radius: 12px;
             overflow: hidden;
+            position: relative;
         }
         .feed-container img {
             width: 100%;
             height: 100%;
             object-fit: contain;
+        }
+        #gameOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            cursor: none;
         }
         @media (max-width: 768px) {
             .feeds-wrapper {
@@ -62,7 +72,8 @@
             <!-- Game Info -->
             <div class="mb-6 text-center">
                 <h2 class="text-3xl font-bold mb-2 text-green-400">Motion-Controlled Catching Game</h2>
-                <p class="text-gray-300 mb-6">Use your hand to catch falling objects. Allow camera access to play!</p>
+                <p class="text-gray-300 mb-2">Use your hand to catch falling objects. Allow camera access to play!</p>
+                <p id="controlInfo" class="text-yellow-400 mb-6">If camera is not available, you can use mouse or touch to control the game.</p>
                 
                 <!-- Game Stats -->
                 <div class="grid grid-cols-3 gap-4 mb-6 text-center">
@@ -77,7 +88,7 @@
                         <p id="livesDisplay" class="text-2xl font-bold text-white">3</p>
                     </div>
                     <div class="bg-gray-800 rounded-lg p-4 shadow-lg">
-                        <i class="fas fa-clock text-blue-400 text-2xl mb-2"></i>
+                        <i class="fas fa-crown text-blue-400 text-2xl mb-2"></i>
                         <h3 class="text-lg font-semibold">High Score</h3>
                         <p id="highScoreDisplay" class="text-2xl font-bold text-white">0</p>
                     </div>
@@ -114,7 +125,7 @@
                 </div>
                 
                 <!-- Game Feed -->
-                <div class="feed-container w-1/2">
+                <div class="feed-container w-1/2 relative">
                     <div class="bg-gray-800 p-2 text-center mb-2 rounded-t-lg">
                         <h3 class="font-semibold flex items-center justify-center gap-2">
                             <i class="fas fa-gamepad text-green-400"></i>
@@ -122,6 +133,8 @@
                         </h3>
                     </div>
                     <img id="gameFeed" src="/game_feed" alt="Game Feed">
+                    <!-- Transparent overlay for mouse/touch controls -->
+                    <div id="gameOverlay" class="touch-none"></div>
                 </div>
             </div>
 
@@ -135,10 +148,24 @@
                     <li>Allow camera access when prompted</li>
                     <li>Click the "Start Game" button to begin</li>
                     <li>Use your index finger to control the catcher at the bottom of the screen</li>
+                    <li>Alternatively, use your mouse or touch to control the catcher</li>
                     <li>Catch falling circles to earn points</li>
                     <li>Missing a circle costs you a life</li>
                     <li>Game ends when you run out of lives</li>
                 </ol>
+            </div>
+            
+            <!-- Control Options -->
+            <div class="bg-gray-800 rounded-lg p-6 shadow-lg mb-8">
+                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+                    <i class="fas fa-hand-pointer text-yellow-400"></i>
+                    Control Options
+                </h3>
+                <div class="space-y-2 text-gray-300">
+                    <p><strong>Hand Tracking:</strong> Move your index finger in front of the camera to control the catcher.</p>
+                    <p><strong>Mouse Control:</strong> Move your mouse cursor over the game feed to control the catcher.</p>
+                    <p><strong>Touch Control:</strong> On touch devices, slide your finger across the game feed to move the catcher.</p>
+                </div>
             </div>
             
             <!-- Technical Details -->
@@ -152,6 +179,7 @@
                     <li>Game logic powered by PyGame</li>
                     <li>Web interface using Flask and Socket.IO</li>
                     <li>Responsive design with Tailwind CSS</li>
+                    <li>Supports both webcam hand tracking and mouse/touch controls</li>
                     <li>Both webcam feed with hand tracking landmarks and game screen are streamed in real-time</li>
                 </ul>
             </div>
@@ -200,10 +228,67 @@
         const finalScore = document.getElementById('finalScore');
         const modalHighScore = document.getElementById('modalHighScore');
         const playAgainBtn = document.getElementById('playAgainBtn');
+        const gameOverlay = document.getElementById('gameOverlay');
+        const gameFeed = document.getElementById('gameFeed');
+        const controlInfo = document.getElementById('controlInfo');
         
         // Game variables
         let gameActive = false;
         let isMuted = false;
+        let cameraAvailable = true;
+        let gameWidth = 640;
+        let gameHeight = 480;
+        
+        // Check if camera is available (if the webcam feed shows "No Camera Available")
+        setTimeout(() => {
+            // Create a canvas to analyze the webcam feed
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const webcamFeed = document.getElementById('webcamFeed');
+            
+            // Wait for webcam feed to load
+            webcamFeed.onload = function() {
+                try {
+                    canvas.width = webcamFeed.width;
+                    canvas.height = webcamFeed.height;
+                    ctx.drawImage(webcamFeed, 0, 0, canvas.width, canvas.height);
+                    
+                    // Check if the webcam feed shows the "No Camera Available" message
+                    // by sampling pixels near the center of the image
+                    const imageData = ctx.getImageData(
+                        canvas.width / 2 - 50, 
+                        canvas.height / 2 - 10, 
+                        100, 
+                        20
+                    ).data;
+                    
+                    // Check if the image is mostly black with some white text
+                    let blackPixels = 0;
+                    let whitePixels = 0;
+                    
+                    for (let i = 0; i < imageData.length; i += 4) {
+                        const r = imageData[i];
+                        const g = imageData[i + 1];
+                        const b = imageData[i + 2];
+                        
+                        if (r < 30 && g < 30 && b < 30) {
+                            blackPixels++;
+                        } else if (r > 200 && g > 200 && b > 200) {
+                            whitePixels++;
+                        }
+                    }
+                    
+                    // If mostly black with some white text, camera is likely not available
+                    if (blackPixels > (imageData.length / 4) * 0.7 && whitePixels > 10) {
+                        cameraAvailable = false;
+                        controlInfo.innerHTML = '<strong>Camera not available!</strong> Using mouse/touch controls instead.';
+                        controlInfo.classList.add('font-bold');
+                    }
+                } catch (e) {
+                    console.error("Error checking camera status:", e);
+                }
+            };
+        }, 2000);
         
         // Update game state from server
         socket.on('game_state_update', function(data) {
@@ -293,6 +378,48 @@
             gameOverModal.classList.add('hidden');
         }
         
+        // Update game dimensions when the window is resized
+        function updateGameDimensions() {
+            const rect = gameFeed.getBoundingClientRect();
+            gameWidth = rect.width;
+            gameHeight = rect.height;
+        }
+        
+        // Initialize game dimensions
+        window.addEventListener('load', updateGameDimensions);
+        window.addEventListener('resize', updateGameDimensions);
+        
+        // Handle mouse movement on game overlay
+        gameOverlay.addEventListener('mousemove', function(e) {
+            const rect = gameOverlay.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const xRatio = x / rect.width;
+            const gameX = Math.round(xRatio * 640); // Convert to game coordinates (0-640)
+            
+            // Send mouse position to server
+            socket.emit('mouse_move', { x: gameX });
+        });
+        
+        // Handle touch movement on game overlay
+        gameOverlay.addEventListener('touchmove', function(e) {
+            e.preventDefault(); // Prevent scrolling
+            
+            if (e.touches.length > 0) {
+                const rect = gameOverlay.getBoundingClientRect();
+                const x = e.touches[0].clientX - rect.left;
+                const xRatio = x / rect.width;
+                const gameX = Math.round(xRatio * 640); // Convert to game coordinates (0-640)
+                
+                // Send touch position to server
+                socket.emit('mouse_move', { x: gameX });
+            }
+        });
+        
+        // Prevent default touch behavior to avoid scrolling
+        gameOverlay.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+        });
+        
         // Refresh game feeds if they fail to load
         document.getElementById('webcamFeed').onerror = function() {
             setTimeout(() => {
@@ -305,6 +432,35 @@
                 this.src = '/game_feed?' + new Date().getTime();
             }, 1000);
         };
+        
+        // Custom cursor for game overlay (catcher indicator)
+        gameOverlay.addEventListener('mousemove', function(e) {
+            const cursorElement = document.getElementById('customCursor') || createCustomCursor();
+            const rect = gameOverlay.getBoundingClientRect();
+            
+            // Update cursor position
+            cursorElement.style.left = (e.clientX - rect.left) + 'px';
+            cursorElement.style.top = (rect.bottom - 18) + 'px'; // Fixed Y position near bottom
+        });
+        
+        // Create custom cursor element for the game overlay
+        function createCustomCursor() {
+            const cursor = document.createElement('div');
+            cursor.id = 'customCursor';
+            cursor.style.position = 'absolute';
+            cursor.style.width = '100px';
+            cursor.style.height = '5px';
+            cursor.style.backgroundColor = 'rgba(0, 255, 0, 0.7)';
+            cursor.style.borderRadius = '3px';
+            cursor.style.pointerEvents = 'none';
+            cursor.style.transform = 'translateX(-50%)';
+            cursor.style.zIndex = '20';
+            
+            gameOverlay.parentNode.style.position = 'relative';
+            gameOverlay.parentNode.appendChild(cursor);
+            
+            return cursor;
+        }
     </script>
 </body>
 </html>
