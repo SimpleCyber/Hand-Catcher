@@ -49,10 +49,10 @@ game_surface = pygame.Surface((WIDTH, HEIGHT))
 # Load sound effects (paths might need adjustment)
 try:
     pygame.mixer.init()
-    catch_sound = pygame.mixer.Sound('./Assets/catch.mp3')
-    miss_sound = pygame.mixer.Sound('./Assets/miss.mp3')
-    game_over_sound = pygame.mixer.Sound('./Assets/game_over.mp3')
-    background_music = pygame.mixer.Sound('./Assets/background_music.mp3')
+    catch_sound = pygame.mixer.Sound('./static/assets/catch.mp3')
+    miss_sound = pygame.mixer.Sound('./static/assets/miss.mp3')
+    game_over_sound = pygame.mixer.Sound('./static/assets/game_over.mp3')
+    background_music = pygame.mixer.Sound('./static/assets/background_music.mp3')
 except Exception as e:
     print(f"Error loading sounds: {e}")
     # Create dummy sound objects

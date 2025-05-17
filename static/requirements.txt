@@ -1,0 +1,9 @@
+flask
+flask-socketio
+opencv-python
+mediapipe
+pygame
+numpy
+gunicorn
+eventlet
+werkzeug
