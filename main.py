@@ -12,7 +12,7 @@ CIRCLE_RADIUS = 20
 FPS = 60
 FALL_SPEED = 5
 MAX_LIVES = 10# Maximum number of lives
-BALL_GENERATION_INTERVAL = 30  # Adjust this value to control the interval between new ball generations
+BALL_GENERATION_INTERVAL = 30 
 
 # Colors
 WHITE = (255, 255, 255)
